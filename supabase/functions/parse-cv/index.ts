@@ -1,31 +1,29 @@
-// parse-cv: download CV from storage, extract text, run AI to extract structured profile
+// parse-cv: download CV from storage, send to Lovable AI for extraction
+// PDFs/DOCX are base64'd and sent as image-like content; for text fallback we decode directly.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { getDocument, GlobalWorkerOptions } from "https://esm.sh/pdfjs-dist@4.0.379/legacy/build/pdf.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.0.379/legacy/build/pdf.worker.mjs";
-
-async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  const doc = await getDocument({ data: bytes, useSystemFonts: true, disableFontFace: true }).promise;
-  let text = "";
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const content = await page.getTextContent();
-    text += content.items.map((it: any) => it.str).join(" ") + "\n";
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
   }
-  return text;
+  return btoa(bin);
 }
 
 async function extractDocxText(bytes: Uint8Array): Promise<string> {
-  // DOCX is a ZIP containing word/document.xml. Minimal extraction without deps.
-  // Use mammoth via esm.sh.
-  const mammoth = await import("https://esm.sh/mammoth@1.8.0/mammoth.browser.min.js");
-  const result = await mammoth.extractRawText({ arrayBuffer: bytes.buffer });
-  return result.value as string;
+  // Minimal DOCX text extraction: unzip via JSZip and pull text from word/document.xml
+  const JSZip = (await import("https://esm.sh/jszip@3.10.1")).default;
+  const zip = await JSZip.loadAsync(bytes);
+  const xml = await zip.file("word/document.xml")?.async("string");
+  if (!xml) return "";
+  // Strip tags, keep text
+  return xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 Deno.serve(async (req) => {
@@ -57,26 +55,34 @@ Deno.serve(async (req) => {
     if (dlErr) throw dlErr;
     const bytes = new Uint8Array(await file.arrayBuffer());
 
-    let rawText = "";
-    if (doc.mime_type === "application/pdf" || doc.file_name.endsWith(".pdf")) {
-      rawText = await extractPdfText(bytes);
-    } else if (doc.mime_type?.includes("wordprocessingml") || doc.file_name.endsWith(".docx")) {
-      rawText = await extractDocxText(bytes);
-    } else {
-      rawText = new TextDecoder().decode(bytes);
-    }
-    rawText = rawText.replace(/\s+/g, " ").trim().slice(0, 30000);
-    if (!rawText) throw new Error("Could not extract text");
+    let userContent: any;
+    const isPdf = doc.mime_type === "application/pdf" || doc.file_name.toLowerCase().endsWith(".pdf");
+    const isDocx = doc.mime_type?.includes("wordprocessingml") || doc.file_name.toLowerCase().endsWith(".docx");
 
-    // AI structured extraction
+    if (isPdf) {
+      // Send PDF via image_url with PDF data URL — Gemini supports PDF input
+      const dataUrl = `data:application/pdf;base64,${bytesToBase64(bytes)}`;
+      userContent = [
+        { type: "text", text: "Extract structured profile data from this CV." },
+        { type: "image_url", image_url: { url: dataUrl } },
+      ];
+    } else {
+      let rawText = "";
+      if (isDocx) rawText = await extractDocxText(bytes);
+      else rawText = new TextDecoder().decode(bytes);
+      rawText = rawText.replace(/\s+/g, " ").trim().slice(0, 30000);
+      if (!rawText) throw new Error("Could not extract text from CV");
+      userContent = `Extract structured profile from this CV:\n\n${rawText}`;
+    }
+
     const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "google/gemini-2.5-flash",
         messages: [
-          { role: "system", content: "You extract structured CV data. Be accurate, never invent. Return concise summaries." },
-          { role: "user", content: `Extract structured profile from this CV:\n\n${rawText}` },
+          { role: "system", content: "You extract structured CV data. Be accurate, never invent." },
+          { role: "user", content: userContent },
         ],
         tools: [{
           type: "function",
@@ -86,16 +92,14 @@ Deno.serve(async (req) => {
             parameters: {
               type: "object",
               properties: {
-                summary: { type: "string", description: "2-3 sentence professional summary" },
-                years_experience: { type: "number", description: "Total years of professional IT experience" },
-                skills: { type: "array", items: { type: "string" }, description: "Technical skills, tools, languages" },
+                summary: { type: "string" },
+                years_experience: { type: "number" },
+                skills: { type: "array", items: { type: "string" } },
                 experience: {
                   type: "array",
                   items: {
                     type: "object",
-                    properties: {
-                      title: { type: "string" }, company: { type: "string" }, dates: { type: "string" }, description: { type: "string" },
-                    },
+                    properties: { title: { type: "string" }, company: { type: "string" }, dates: { type: "string" }, description: { type: "string" } },
                     required: ["title"], additionalProperties: false,
                   },
                 },
@@ -103,9 +107,7 @@ Deno.serve(async (req) => {
                   type: "array",
                   items: {
                     type: "object",
-                    properties: {
-                      degree: { type: "string" }, institution: { type: "string" }, year: { type: "string" },
-                    },
+                    properties: { degree: { type: "string" }, institution: { type: "string" }, year: { type: "string" } },
                     required: ["degree"], additionalProperties: false,
                   },
                 },
@@ -146,7 +148,6 @@ Deno.serve(async (req) => {
       education: args.education,
       certifications: args.certifications ?? [],
       years_experience: args.years_experience ?? null,
-      raw_text: rawText,
     }, { onConflict: "user_id" });
 
     return new Response(JSON.stringify({ ok: true, profile: args }), {
