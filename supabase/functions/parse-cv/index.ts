@@ -138,11 +138,11 @@ Deno.serve(async (req) => {
       }),
     });
 
-    if (aiResp.status === 429) return new Response(JSON.stringify({ error: "Rate limited, try again later" }), { status: 429, headers: corsHeaders });
-    if (aiResp.status === 402) return new Response(JSON.stringify({ error: "AI credits exhausted. Add funds in Settings → Workspace → Usage." }), { status: 402, headers: corsHeaders });
+    if (aiResp.status === 429) return ok({ ok: false, error: "Rate limited, try again later" });
+    if (aiResp.status === 402) return ok({ ok: false, error: "AI credits exhausted. Add funds in Settings → Workspace → Usage." });
     if (!aiResp.ok) {
       const t = await aiResp.text();
-      throw new Error(`AI error ${aiResp.status}: ${t}`);
+      return ok({ ok: false, error: `AI error ${aiResp.status}: ${t.slice(0, 500)}` });
     }
 
     const aiJson = await aiResp.json();
