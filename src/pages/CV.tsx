@@ -79,14 +79,31 @@ const CV = () => {
             <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" /> Upload CV</CardTitle>
             <CardDescription>Replaces your active CV. Max 10MB.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-wrap items-center gap-3">
             <label className="block">
               <input type="file" accept=".pdf,.docx,.txt" onChange={onFile} disabled={uploading || parsing} className="hidden" id="cv-upload" />
               <Button asChild className="bg-gradient-primary cursor-pointer" disabled={uploading || parsing}>
                 <span><Upload className="h-4 w-4" />{uploading ? "Uploading…" : parsing ? "Parsing…" : "Choose file"}</span>
               </Button>
             </label>
-            {(uploading || parsing) && <Loader2 className="inline-block ml-3 h-4 w-4 animate-spin text-primary" />}
+            {cvs.length > 0 && (
+              <Button variant="outline" disabled={parsing || uploading} onClick={async () => {
+                const active = cvs.find((c) => c.is_active) ?? cvs[0];
+                if (!active) return;
+                setParsing(true);
+                try {
+                  const { error } = await supabase.functions.invoke("parse-cv", { body: { cv_document_id: active.id } });
+                  if (error) throw error;
+                  toast.success("CV parsed!");
+                  await load();
+                } catch (e: any) {
+                  toast.error(e.message ?? "Parse failed");
+                } finally { setParsing(false); }
+              }}>
+                <Sparkles className="h-4 w-4" /> {parsing ? "Parsing…" : "Re-parse latest CV"}
+              </Button>
+            )}
+            {(uploading || parsing) && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
           </CardContent>
         </Card>
 
