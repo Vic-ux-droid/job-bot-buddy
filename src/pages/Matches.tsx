@@ -44,9 +44,17 @@ const Matches = () => {
   const tailor = async (m: Match) => {
     setTailoring(m.id);
     try {
-      const { error } = await supabase.functions.invoke("tailor-cv", { body: { match_id: m.id } });
+      const { data, error } = await supabase.functions.invoke("tailor-cv", { body: { match_id: m.id } });
       if (error) throw error;
-      toast.success("Tailored CV ready");
+      if (data?.error) throw new Error(data.error);
+      toast.success("Tailored CV ready — auto-applying");
+      if (data?.path) {
+        const { data: signed } = await supabase.storage.from("tailored-cvs").createSignedUrl(data.path, 60);
+        if (signed?.signedUrl) window.open(signed.signedUrl, "_blank");
+      }
+      if (data?.job_url) {
+        setTimeout(() => window.open(data.job_url, "_blank"), 500);
+      }
       await load();
     } catch (e: any) {
       toast.error(e.message ?? "Tailoring failed");
