@@ -67,6 +67,10 @@ const Dashboard = () => {
   };
 
   const runNow = async () => {
+    if (!stats.hasCv) {
+      toast.error("Your CV hasn't finished processing. Re-upload it on the CV page.");
+      return;
+    }
     setLoading(true);
     toast.info("Running pipeline: fetching jobs, scoring, tailoring…");
     const { data, error } = await supabase.functions.invoke("run-automation", { body: { user_id: user?.id } });
