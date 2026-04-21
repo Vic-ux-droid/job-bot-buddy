@@ -175,8 +175,8 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     console.error("parse-cv error", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), {
+      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
