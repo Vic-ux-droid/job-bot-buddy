@@ -11,7 +11,8 @@ function bytesToBase64(bytes: Uint8Array): string {
   let bin = "";
   const chunk = 0x8000;
   for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
+    const sub = bytes.subarray(i, i + chunk);
+    bin += String.fromCharCode(...sub);
   }
   return btoa(bin);
 }
@@ -51,9 +52,11 @@ Deno.serve(async (req) => {
     const { data: doc, error: docErr } = await admin.from("cv_documents").select("*").eq("id", cv_document_id).eq("user_id", user.id).single();
     if (docErr || !doc) throw new Error("CV not found");
 
+    console.log("parse-cv: downloading", doc.file_path, "user", user.id);
     const { data: file, error: dlErr } = await admin.storage.from("cvs").download(doc.file_path);
     if (dlErr) throw dlErr;
     const bytes = new Uint8Array(await file.arrayBuffer());
+    console.log("parse-cv: downloaded", bytes.length, "bytes, mime", doc.mime_type);
 
     let userContent: any;
     const isPdf = doc.mime_type === "application/pdf" || doc.file_name.toLowerCase().endsWith(".pdf");
@@ -137,9 +140,15 @@ Deno.serve(async (req) => {
     }
 
     const aiJson = await aiResp.json();
-    const args = JSON.parse(aiJson.choices[0].message.tool_calls[0].function.arguments);
+    console.log("parse-cv: AI responded");
+    const toolCall = aiJson?.choices?.[0]?.message?.tool_calls?.[0];
+    if (!toolCall) {
+      console.error("parse-cv: no tool call in response", JSON.stringify(aiJson).slice(0, 500));
+      throw new Error("AI did not return structured profile");
+    }
+    const args = JSON.parse(toolCall.function.arguments);
 
-    await admin.from("parsed_profile").upsert({
+    const { error: upsertErr } = await admin.from("parsed_profile").upsert({
       user_id: user.id,
       cv_document_id: doc.id,
       summary: args.summary,
@@ -149,6 +158,11 @@ Deno.serve(async (req) => {
       certifications: args.certifications ?? [],
       years_experience: args.years_experience ?? null,
     }, { onConflict: "user_id" });
+    if (upsertErr) {
+      console.error("parse-cv: upsert failed", upsertErr);
+      throw upsertErr;
+    }
+    console.log("parse-cv: profile saved for", user.id);
 
     return new Response(JSON.stringify({ ok: true, profile: args }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
