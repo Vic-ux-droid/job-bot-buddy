@@ -90,28 +90,6 @@ async function fetchBrighterMondayKE(): Promise<any[]> {
 }
 
 // Adzuna Kenya
-async function fetchAdzunaKE(): Promise<any[]> {
-  const APP_ID = Deno.env.get("ADZUNA_APP_ID");
-  const APP_KEY = Deno.env.get("ADZUNA_APP_KEY");
-  if (!APP_ID || !APP_KEY) return [];
-  const url = `https://api.adzuna.com/v1/api/jobs/ke/search/1?app_id=${APP_ID}&app_key=${APP_KEY}&results_per_page=50&category=it-jobs&content-type=application/json`;
-  const r = await fetch(url);
-  if (!r.ok) { console.error("adzuna KE error", r.status, await r.text()); return []; }
-  const j = await r.json();
-  return (j.results ?? []).map((it: any) => ({
-    source: "adzuna-ke",
-    external_id: String(it.id),
-    title: it.title,
-    company: it.company?.display_name,
-    description: (it.description ?? "").slice(0, 5000),
-    url: it.redirect_url,
-    location: it.location?.display_name ?? "Kenya",
-    remote: /remote/i.test(it.title) || /remote/i.test(it.location?.display_name ?? ""),
-    tags: [it.category?.label].filter(Boolean),
-    posted_at: it.created,
-  }));
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
@@ -119,7 +97,7 @@ Deno.serve(async (req) => {
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const admin = createClient(SUPABASE_URL, SERVICE);
 
-    const results = await Promise.allSettled([fetchMyJobMagKE(), fetchBrighterMondayKE(), fetchAdzunaKE()]);
+    const results = await Promise.allSettled([fetchMyJobMagKE(), fetchBrighterMondayKE()]);
     const allJobs = results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
 
     // Filter: must be IT-related AND Kenya-based
@@ -131,7 +109,7 @@ Deno.serve(async (req) => {
       await admin.from("automation_state").update({ last_job_fetch: new Date().toISOString() }).eq("id", 1);
       return new Response(JSON.stringify({
         ok: true, inserted: 0, total: allJobs.length,
-        sources: { myjobmag_ke: results[0].status, brightermonday_ke: results[1].status, adzuna_ke: results[2].status },
+        sources: { myjobmag_ke: results[0].status, brightermonday_ke: results[1].status },
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -147,7 +125,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       ok: true, inserted, total: allJobs.length,
-      sources: { myjobmag_ke: results[0].status, brightermonday_ke: results[1].status, adzuna_ke: results[2].status },
+      sources: { myjobmag_ke: results[0].status, brightermonday_ke: results[1].status },
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("fetch-jobs", e);
