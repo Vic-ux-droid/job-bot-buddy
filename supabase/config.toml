@@ -1,7 +1,7 @@
 project_id = "myeuahhncwtukcgjfvrs"
 
 [functions.parse-cv]
-verify_jwt = true
+verify_jwt = false
 
 [functions.fetch-jobs]
 verify_jwt = false
