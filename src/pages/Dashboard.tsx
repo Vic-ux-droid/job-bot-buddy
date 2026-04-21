@@ -6,32 +6,65 @@ import { AppShell } from "@/components/AppShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Briefcase, FileText, Send, Settings, Sparkles, TrendingUp } from "lucide-react";
+import { Briefcase, FileText, Send, Settings, Sparkles, TrendingUp, MessageCircle, CheckCircle2, XCircle, PauseCircle, Clock } from "lucide-react";
 import { toast } from "sonner";
+
+type TgStatus = {
+  connected: boolean;
+  paused: boolean;
+  sent: number;
+  failed: number;
+  pending: number;
+  lastSentAt: string | null;
+};
 
 const Dashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState({ matches: 0, applications: 0, topScore: 0, hasCv: false, hasTelegram: false });
+  const [tg, setTg] = useState<TgStatus>({ connected: false, paused: false, sent: 0, failed: 0, pending: 0, lastSentAt: null });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const [matches, apps, cv, tg] = await Promise.all([
+      const [matches, apps, cv, tgSettings, sent, failed, pending, lastSent] = await Promise.all([
         supabase.from("job_matches").select("score", { count: "exact" }).eq("user_id", user.id).order("score", { ascending: false }).limit(1),
         supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", user.id),
         supabase.from("parsed_profile").select("id").eq("user_id", user.id).maybeSingle(),
-        supabase.from("telegram_settings").select("chat_id").eq("user_id", user.id).maybeSingle(),
+        supabase.from("telegram_settings").select("chat_id, paused").eq("user_id", user.id).maybeSingle(),
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", user.id).not("notified_at", "is", null),
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "failed"),
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "queued"),
+        supabase.from("applications").select("notified_at").eq("user_id", user.id).not("notified_at", "is", null).order("notified_at", { ascending: false }).limit(1).maybeSingle(),
       ]);
       setStats({
         matches: matches.count ?? 0,
         applications: apps.count ?? 0,
         topScore: matches.data?.[0]?.score ?? 0,
         hasCv: !!cv.data,
-        hasTelegram: !!tg.data?.chat_id,
+        hasTelegram: !!tgSettings.data?.chat_id,
+      });
+      setTg({
+        connected: !!tgSettings.data?.chat_id,
+        paused: !!tgSettings.data?.paused,
+        sent: sent.count ?? 0,
+        failed: failed.count ?? 0,
+        pending: pending.count ?? 0,
+        lastSentAt: lastSent.data?.notified_at ?? null,
       });
     })();
   }, [user]);
+
+  const formatRelative = (iso: string | null) => {
+    if (!iso) return "Never";
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return "Just now";
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  };
 
   const runNow = async () => {
     setLoading(true);
@@ -70,6 +103,42 @@ const Dashboard = () => {
           <StatCard icon={Send} label="Applications" value={stats.applications} />
           <StatCard icon={TrendingUp} label="Top match score" value={`${stats.topScore}%`} />
         </div>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <div className="h-9 w-9 rounded-lg bg-primary/10 grid place-items-center">
+                  <MessageCircle className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Telegram notifications</CardTitle>
+                  <CardDescription className="text-xs">Delivery status of your match alerts</CardDescription>
+                </div>
+              </div>
+              {!tg.connected ? (
+                <Badge variant="outline" className="border-warning/50 text-warning">Not connected</Badge>
+              ) : tg.paused ? (
+                <Badge variant="outline" className="gap-1"><PauseCircle className="h-3 w-3" /> Paused</Badge>
+              ) : (
+                <Badge variant="outline" className="gap-1 border-success/50 text-success"><CheckCircle2 className="h-3 w-3" /> Active</Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <TgStat icon={Clock} label="Last sent" value={formatRelative(tg.lastSentAt)} />
+              <TgStat icon={Send} label="Sent" value={tg.sent} />
+              <TgStat icon={XCircle} label="Failed" value={tg.failed} tone={tg.failed > 0 ? "danger" : "default"} />
+              <TgStat icon={Clock} label="Pending" value={tg.pending} />
+            </div>
+            {!tg.connected && (
+              <Button asChild variant="outline" size="sm" className="mt-4">
+                <Link to="/settings">Connect Telegram</Link>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
 
         <Card className="shadow-elegant">
           <CardHeader>
@@ -129,6 +198,16 @@ const QuickLink = ({ to, icon: Icon, title, desc }: any) => (
       </CardContent>
     </Card>
   </Link>
+);
+
+const TgStat = ({ icon: Icon, label, value, tone = "default" }: any) => (
+  <div className="flex items-start gap-2">
+    <Icon className={`h-4 w-4 mt-0.5 ${tone === "danger" ? "text-destructive" : "text-muted-foreground"}`} />
+    <div className="min-w-0">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={`text-sm font-semibold truncate ${tone === "danger" ? "text-destructive" : ""}`}>{value}</p>
+    </div>
+  </div>
 );
 
 export default Dashboard;
