@@ -186,10 +186,13 @@ Deno.serve(async (req) => {
 
     await admin.from("applications").upsert({
       user_id: userId, job_id: match.job.id, match_id: match.id,
-      status: "queued", tailored_cv_path: path, cover_letter: tailored.cover_letter,
+      status: "applied", tailored_cv_path: path, cover_letter: tailored.cover_letter,
+      notified_at: new Date().toISOString(),
     }, { onConflict: "user_id,job_id" });
 
-    return new Response(JSON.stringify({ ok: true, path, cover_letter: tailored.cover_letter }), {
+    await admin.from("job_matches").update({ status: "applied" }).eq("id", match.id);
+
+    return new Response(JSON.stringify({ ok: true, path, cover_letter: tailored.cover_letter, job_url: match.job.url }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
