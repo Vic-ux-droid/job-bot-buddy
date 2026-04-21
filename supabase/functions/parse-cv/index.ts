@@ -30,20 +30,26 @@ async function extractDocxText(bytes: Uint8Array): Promise<string> {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  const ok = (body: any, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    if (!authHeader) return ok({ ok: false, error: "Missing Authorization header" });
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY missing");
+    const ANON = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
+    console.log("parse-cv: env check", { hasUrl: !!SUPABASE_URL, hasService: !!SERVICE, hasLovable: !!LOVABLE_API_KEY, hasAnon: !!ANON });
+    if (!LOVABLE_API_KEY) return ok({ ok: false, error: "LOVABLE_API_KEY missing in edge function env" });
+    if (!ANON) return ok({ ok: false, error: "SUPABASE_ANON_KEY missing in edge function env" });
 
-    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!, {
+    const userClient = createClient(SUPABASE_URL, ANON, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user } } = await userClient.auth.getUser();
-    if (!user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    const { data: { user }, error: userErr } = await userClient.auth.getUser();
+    if (userErr) console.error("parse-cv: getUser err", userErr);
+    if (!user) return ok({ ok: false, error: "Could not resolve user from token" });
+    console.log("parse-cv: user", user.id);
 
     const { cv_document_id } = await req.json();
     if (!cv_document_id) throw new Error("cv_document_id required");
