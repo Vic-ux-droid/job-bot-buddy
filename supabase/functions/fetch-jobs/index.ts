@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       ok: true, inserted, total: allJobs.length,
-      sources: { myjobmag_ke: results[0].status, brightermonday_ke: results[1].status, adzuna_ke: results[2].status },
+      sources: { myjobmag_ke: results[0].status, brightermonday_ke: results[1].status },
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("fetch-jobs", e);
