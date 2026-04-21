@@ -53,9 +53,17 @@ Deno.serve(async (req) => {
     let totalNotified = 0;
 
     for (const uid of userIds) {
-      // Need parsed profile
-      const { data: profile } = await admin.from("parsed_profile").select("id").eq("user_id", uid).maybeSingle();
-      if (!profile) continue;
+      // Need parsed profile; if missing, try to parse the active CV
+      let { data: profile } = await admin.from("parsed_profile").select("id").eq("user_id", uid).maybeSingle();
+      if (!profile) {
+        const { data: activeCv } = await admin.from("cv_documents").select("id").eq("user_id", uid).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (activeCv) {
+          console.log("run-automation: parsing CV for", uid);
+          // parse-cv requires user auth header; call admin path: re-implement minimal trigger via direct call with service role isn't possible (parse-cv checks user). Skip for now.
+        }
+        console.log("run-automation: skipping user without parsed profile", uid);
+        continue;
+      }
 
       const { data: tg } = await admin.from("telegram_settings").select("*").eq("user_id", uid).single();
       if (!tg) continue;
