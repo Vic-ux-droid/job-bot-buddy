@@ -55,6 +55,7 @@ const CV = () => {
       setParsing(true);
       const { data: parseRes, error: parseErr } = await supabase.functions.invoke("parse-cv", { body: { cv_document_id: doc.id } });
       if (parseErr) throw parseErr;
+      if (parseRes && parseRes.ok === false) throw new Error(parseRes.error || "Parse failed");
       toast.success("CV parsed!");
       await load();
     } catch (err: any) {
