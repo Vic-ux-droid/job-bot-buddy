@@ -104,6 +104,42 @@ const Dashboard = () => {
           <StatCard icon={TrendingUp} label="Top match score" value={`${stats.topScore}%`} />
         </div>
 
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <div className="h-9 w-9 rounded-lg bg-primary/10 grid place-items-center">
+                  <MessageCircle className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Telegram notifications</CardTitle>
+                  <CardDescription className="text-xs">Delivery status of your match alerts</CardDescription>
+                </div>
+              </div>
+              {!tg.connected ? (
+                <Badge variant="outline" className="border-warning/50 text-warning">Not connected</Badge>
+              ) : tg.paused ? (
+                <Badge variant="outline" className="gap-1"><PauseCircle className="h-3 w-3" /> Paused</Badge>
+              ) : (
+                <Badge variant="outline" className="gap-1 border-success/50 text-success"><CheckCircle2 className="h-3 w-3" /> Active</Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <TgStat icon={Clock} label="Last sent" value={formatRelative(tg.lastSentAt)} />
+              <TgStat icon={Send} label="Sent" value={tg.sent} />
+              <TgStat icon={XCircle} label="Failed" value={tg.failed} tone={tg.failed > 0 ? "danger" : "default"} />
+              <TgStat icon={Clock} label="Pending" value={tg.pending} />
+            </div>
+            {!tg.connected && (
+              <Button asChild variant="outline" size="sm" className="mt-4">
+                <Link to="/settings">Connect Telegram</Link>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+
         <Card className="shadow-elegant">
           <CardHeader>
             <CardTitle>Run the pipeline now</CardTitle>
