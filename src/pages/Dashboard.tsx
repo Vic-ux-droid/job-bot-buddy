@@ -6,32 +6,65 @@ import { AppShell } from "@/components/AppShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Briefcase, FileText, Send, Settings, Sparkles, TrendingUp } from "lucide-react";
+import { Briefcase, FileText, Send, Settings, Sparkles, TrendingUp, MessageCircle, CheckCircle2, XCircle, PauseCircle, Clock } from "lucide-react";
 import { toast } from "sonner";
+
+type TgStatus = {
+  connected: boolean;
+  paused: boolean;
+  sent: number;
+  failed: number;
+  pending: number;
+  lastSentAt: string | null;
+};
 
 const Dashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState({ matches: 0, applications: 0, topScore: 0, hasCv: false, hasTelegram: false });
+  const [tg, setTg] = useState<TgStatus>({ connected: false, paused: false, sent: 0, failed: 0, pending: 0, lastSentAt: null });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const [matches, apps, cv, tg] = await Promise.all([
+      const [matches, apps, cv, tgSettings, sent, failed, pending, lastSent] = await Promise.all([
         supabase.from("job_matches").select("score", { count: "exact" }).eq("user_id", user.id).order("score", { ascending: false }).limit(1),
         supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", user.id),
         supabase.from("parsed_profile").select("id").eq("user_id", user.id).maybeSingle(),
-        supabase.from("telegram_settings").select("chat_id").eq("user_id", user.id).maybeSingle(),
+        supabase.from("telegram_settings").select("chat_id, paused").eq("user_id", user.id).maybeSingle(),
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", user.id).not("notified_at", "is", null),
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "failed"),
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "queued"),
+        supabase.from("applications").select("notified_at").eq("user_id", user.id).not("notified_at", "is", null).order("notified_at", { ascending: false }).limit(1).maybeSingle(),
       ]);
       setStats({
         matches: matches.count ?? 0,
         applications: apps.count ?? 0,
         topScore: matches.data?.[0]?.score ?? 0,
         hasCv: !!cv.data,
-        hasTelegram: !!tg.data?.chat_id,
+        hasTelegram: !!tgSettings.data?.chat_id,
+      });
+      setTg({
+        connected: !!tgSettings.data?.chat_id,
+        paused: !!tgSettings.data?.paused,
+        sent: sent.count ?? 0,
+        failed: failed.count ?? 0,
+        pending: pending.count ?? 0,
+        lastSentAt: lastSent.data?.notified_at ?? null,
       });
     })();
   }, [user]);
+
+  const formatRelative = (iso: string | null) => {
+    if (!iso) return "Never";
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return "Just now";
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  };
 
   const runNow = async () => {
     setLoading(true);
