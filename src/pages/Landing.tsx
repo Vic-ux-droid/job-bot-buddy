@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Briefcase, FileText, Send, Sparkles, Target, Zap } from "lucide-react";
+import { InstallButton } from "@/components/InstallButton";
 
 const Landing = () => {
   return (
@@ -31,7 +32,8 @@ const Landing = () => {
           <Button asChild size="lg" className="bg-gradient-primary shadow-glow hover:opacity-90">
             <Link to="/auth">Get started — free</Link>
           </Button>
-          <Button asChild size="lg" variant="outline">
+          <InstallButton size="lg" variant="outline" />
+          <Button asChild size="lg" variant="ghost">
             <a href="#how">How it works</a>
           </Button>
         </div>
