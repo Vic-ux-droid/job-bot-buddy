@@ -200,4 +200,14 @@ const QuickLink = ({ to, icon: Icon, title, desc }: any) => (
   </Link>
 );
 
+const TgStat = ({ icon: Icon, label, value, tone = "default" }: any) => (
+  <div className="flex items-start gap-2">
+    <Icon className={`h-4 w-4 mt-0.5 ${tone === "danger" ? "text-destructive" : "text-muted-foreground"}`} />
+    <div className="min-w-0">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={`text-sm font-semibold truncate ${tone === "danger" ? "text-destructive" : ""}`}>{value}</p>
+    </div>
+  </div>
+);
+
 export default Dashboard;
