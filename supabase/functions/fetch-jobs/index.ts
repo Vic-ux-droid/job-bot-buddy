@@ -109,7 +109,7 @@ Deno.serve(async (req) => {
       await admin.from("automation_state").update({ last_job_fetch: new Date().toISOString() }).eq("id", 1);
       return new Response(JSON.stringify({
         ok: true, inserted: 0, total: allJobs.length,
-        sources: { myjobmag_ke: results[0].status, brightermonday_ke: results[1].status, adzuna_ke: results[2].status },
+        sources: { myjobmag_ke: results[0].status, brightermonday_ke: results[1].status },
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
