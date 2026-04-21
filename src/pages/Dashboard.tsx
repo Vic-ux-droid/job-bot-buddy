@@ -153,7 +153,7 @@ const Dashboard = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={runNow} disabled={loading || !stats.hasCv} className="bg-gradient-primary shadow-glow">
+            <Button onClick={runNow} disabled={loading} className="bg-gradient-primary shadow-glow">
               {loading ? "Running…" : "Run now"}
             </Button>
             {!stats.hasCv && (
