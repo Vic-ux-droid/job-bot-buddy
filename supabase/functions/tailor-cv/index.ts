@@ -17,14 +17,11 @@ interface Tailored {
 }
 
 async function tailor(profile: any, job: any, apiKey: string): Promise<Tailored> {
-  const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "google/gemini-3-flash-preview",
-      messages: [
-        { role: "system", content: "You are an expert CV writer. Tailor truthfully — never invent skills, jobs, or accomplishments. Reword and emphasize what's already there for ATS optimization." },
-        { role: "user", content: `Tailor this profile for the job below.
+  const payload = {
+    model: "google/gemini-3-flash-preview",
+    messages: [
+      { role: "system", content: "You are an expert CV writer. Tailor truthfully — never invent skills, jobs, or accomplishments. Reword and emphasize what's already there for ATS optimization." },
+      { role: "user", content: `Tailor this profile for the job below.
 
 PROFILE:
 Summary: ${profile.summary ?? ""}
@@ -36,53 +33,63 @@ JOB: ${job.title} at ${job.company ?? ""}
 Description: ${(job.description ?? "").replace(/<[^>]+>/g, " ").slice(0, 3000)}
 
 Rewrite the summary to align with the role. Pick the most relevant skills. Reframe experience bullets toward the job's requirements. Write a brief 3-paragraph cover letter.` },
-      ],
-      tools: [{
-        type: "function",
-        function: {
-          name: "save_tailored",
-          parameters: {
-            type: "object",
-            properties: {
-              headline: { type: "string", description: "Professional headline aligned with role" },
-              summary: { type: "string", description: "3-4 sentence tailored summary" },
-              highlighted_skills: { type: "array", items: { type: "string" }, description: "Top 10-15 skills relevant to the job" },
-              experience: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    title: { type: "string" }, company: { type: "string" }, dates: { type: "string" },
-                    bullets: { type: "array", items: { type: "string" } },
-                  },
-                  required: ["title", "company", "dates", "bullets"],
-                  additionalProperties: false,
+    ],
+    tools: [{
+      type: "function",
+      function: {
+        name: "save_tailored",
+        parameters: {
+          type: "object",
+          properties: {
+            headline: { type: "string", description: "Professional headline aligned with role" },
+            summary: { type: "string", description: "3-4 sentence tailored summary" },
+            highlighted_skills: { type: "array", items: { type: "string" }, description: "Top 10-15 skills relevant to the job" },
+            experience: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  title: { type: "string" }, company: { type: "string" }, dates: { type: "string" },
+                  bullets: { type: "array", items: { type: "string" } },
                 },
+                required: ["title", "company", "dates", "bullets"],
+                additionalProperties: false,
               },
-              education: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: { degree: { type: "string" }, institution: { type: "string" }, year: { type: "string" } },
-                  required: ["degree", "institution", "year"],
-                  additionalProperties: false,
-                },
-              },
-              cover_letter: { type: "string" },
             },
-            required: ["headline", "summary", "highlighted_skills", "experience", "education", "cover_letter"],
-            additionalProperties: false,
+            education: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: { degree: { type: "string" }, institution: { type: "string" }, year: { type: "string" } },
+                required: ["degree", "institution", "year"],
+                additionalProperties: false,
+              },
+            },
+            cover_letter: { type: "string" },
           },
+          required: ["headline", "summary", "highlighted_skills", "experience", "education", "cover_letter"],
+          additionalProperties: false,
         },
-      }],
-      tool_choice: { type: "function", function: { name: "save_tailored" } },
-    }),
-  });
-  if (r.status === 429) throw new Error("Rate limited, please try again later.");
-  if (r.status === 402) throw new Error("AI credits exhausted. Add funds in Settings → Workspace → Usage.");
-  if (!r.ok) throw new Error(`AI error ${r.status}`);
-  const j = await r.json();
-  return JSON.parse(j.choices[0].message.tool_calls[0].function.arguments);
+      },
+    }],
+    tool_choice: { type: "function", function: { name: "save_tailored" } },
+  };
+
+  const delays = [0, 2000, 5000, 12000];
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]));
+    const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (r.status === 429) { console.log(`tailor: 429, retry ${i + 1}/${delays.length}`); continue; }
+    if (r.status === 402) throw new Error("AI credits exhausted. Add funds in Settings → Workspace → Usage.");
+    if (!r.ok) throw new Error(`AI error ${r.status}`);
+    const j = await r.json();
+    return JSON.parse(j.choices[0].message.tool_calls[0].function.arguments);
+  }
+  throw new Error("AI is busy (rate limited). Please wait a minute and try again.");
 }
 
 function buildPdf(t: Tailored, candidateName: string, contactEmail: string): Uint8Array {
